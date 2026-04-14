@@ -4,6 +4,20 @@ All notable changes to nfm are documented here.
 
 ---
 
+## [1.0.2] — 2026-04-14
+
+### Added
+- **Filter-as-you-type in file browser** — press `/` to open the filter bar and
+  start typing; the listing narrows in real-time to entries whose names contain
+  the typed substring (case-insensitive, UTF-8-aware: typing `ün` finds
+  `München`, typing `3` finds `123` and `367`)
+- Filter bar shows match count while active (`/foo  (3 matches)`)
+- `ESC` while typing closes the bar but keeps the filter; `ESC` again (or
+  backspace on an empty bar) clears the filter entirely
+- Arrow keys work normally during filtering so you can navigate while searching
+
+---
+
 ## [1.0.1] — 2026-04-14
 
 ### Fixed

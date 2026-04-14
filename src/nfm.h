@@ -184,13 +184,23 @@ typedef struct {
 
     char current_path[PATH_MAX];
 
-    /* file browser */
-    FileEntry *files;
-    int        file_count;
+    /* file browser — raw listing */
+    FileEntry *all_files;           /* full directory listing (sorted)        */
+    int        all_count;           /* entries in all_files[]                 */
+
+    /* visible subset (after text-filter) */
+    int        show_idx[NFM_MAX_FILES]; /* indices into all_files[]           */
+    int        file_count;          /* entries in show_idx[]                  */
+
     int        browser_cursor;
     int        browser_scroll;
     int        show_hidden;
-    int        show_media_only;  /* 1 = hide non-media files in browser */
+    int        show_media_only;
+
+    /* filter-as-you-type */
+    char       filter_buf[256];     /* current filter string (UTF-8)          */
+    int        filter_len;          /* byte length of filter_buf              */
+    int        filter_active;       /* 1 = filter input bar is open           */
 
     /* selected file */
     char      selected_file[PATH_MAX];

@@ -45,34 +45,80 @@ static FileType ext_to_type(const char *name) {
 static int cmp_files(const void *a, const void *b) {
     const FileEntry *fa = (const FileEntry *)a;
     const FileEntry *fb = (const FileEntry *)b;
-    /* ".." always first */
     if (strcmp(fa->name, "..") == 0) return -1;
     if (strcmp(fb->name, "..") == 0) return  1;
-    /* dirs before files */
     if (fa->is_dir && !fb->is_dir) return -1;
     if (!fa->is_dir && fb->is_dir) return  1;
     return strcasecmp(fa->name, fb->name);
 }
 
+/* Macro: access the i-th currently visible file */
+#define BFILE(ctx, i) ((ctx)->all_files[(ctx)->show_idx[(i)]])
+
+/* Case-insensitive substring search (byte-level; fine for UTF-8 when the
+ * needle is typed in the same encoding as the haystack). */
+static int contains_icase(const char *hay, const char *needle) {
+    if (!needle || !*needle) return 1;
+    size_t nl = strlen(needle);
+    for (; *hay; hay++)
+        if (strncasecmp(hay, needle, nl) == 0) return 1;
+    return 0;
+}
+
+/* Remove the last UTF-8 codepoint from buf (handles multi-byte chars). */
+static void filter_backspace(char *buf, int *len) {
+    if (*len == 0) return;
+    int i = *len - 1;
+    /* step back over continuation bytes (10xxxxxx) */
+    while (i > 0 && ((unsigned char)buf[i] & 0xC0) == 0x80) i--;
+    buf[i] = '\0';
+    *len   = i;
+}
+
+/* Rebuild show_idx[] from all_files[] using the current filter string. */
+static void apply_filter(AppCtx *ctx) {
+    int n = 0;
+    for (int i = 0; i < ctx->all_count && n < NFM_MAX_FILES; i++) {
+        FileEntry *fe = &ctx->all_files[i];
+        if (strcmp(fe->name, "..") == 0) {      /* ".." is always visible */
+            ctx->show_idx[n++] = i;
+            continue;
+        }
+        if (ctx->filter_len == 0 || contains_icase(fe->name, ctx->filter_buf))
+            ctx->show_idx[n++] = i;
+    }
+    ctx->file_count = n;
+    if (ctx->browser_cursor >= ctx->file_count)
+        ctx->browser_cursor = ctx->file_count > 0 ? ctx->file_count - 1 : 0;
+    if (ctx->browser_scroll > ctx->browser_cursor)
+        ctx->browser_scroll = ctx->browser_cursor;
+    ctx->probe_loaded = 0;
+}
+
 static void load_directory(AppCtx *ctx) {
-    free(ctx->files);
-    ctx->files         = NULL;
+    free(ctx->all_files);
+    ctx->all_files     = NULL;
+    ctx->all_count     = 0;
     ctx->file_count    = 0;
     ctx->browser_cursor= 0;
     ctx->browser_scroll= 0;
 
     DIR *d = opendir(ctx->current_path);
-    if (!d) { snprintf(ctx->status_msg, sizeof(ctx->status_msg), "Cannot open: %s", ctx->current_path); ctx->status_is_error=1; return; }
+    if (!d) {
+        snprintf(ctx->status_msg, sizeof(ctx->status_msg),
+                 "Cannot open: %s", ctx->current_path);
+        ctx->status_is_error = 1;
+        return;
+    }
 
-    ctx->files = malloc(NFM_MAX_FILES * sizeof(FileEntry));
-    if (!ctx->files) { closedir(d); return; }
+    ctx->all_files = malloc(NFM_MAX_FILES * sizeof(FileEntry));
+    if (!ctx->all_files) { closedir(d); return; }
 
     struct dirent *ent;
-    while ((ent = readdir(d)) && ctx->file_count < NFM_MAX_FILES) {
+    while ((ent = readdir(d)) && ctx->all_count < NFM_MAX_FILES) {
         const char *nm = ent->d_name;
         if (strcmp(nm, ".") == 0) continue;
         if (nm[0] == '.' && strcmp(nm, "..") != 0 && !ctx->show_hidden) continue;
-        /* media-only filter: skip regular files that are not video/audio/image */
         if (ctx->show_media_only && strcmp(nm, "..") != 0) {
             FileType t = ext_to_type(nm);
             struct stat _st;
@@ -82,7 +128,7 @@ static void load_directory(AppCtx *ctx) {
                 && t == FILE_TYPE_OTHER) continue;
         }
 
-        FileEntry *fe = &ctx->files[ctx->file_count];
+        FileEntry *fe = &ctx->all_files[ctx->all_count];
         memset(fe, 0, sizeof(*fe));
         snprintf(fe->name,     sizeof(fe->name),     "%s", nm);
         snprintf(fe->fullpath, sizeof(fe->fullpath),  "%s/%s", ctx->current_path, nm);
@@ -94,10 +140,11 @@ static void load_directory(AppCtx *ctx) {
             fe->size   = st.st_size;
         }
         fe->type = fe->is_dir ? FILE_TYPE_DIR : ext_to_type(nm);
-        ctx->file_count++;
+        ctx->all_count++;
     }
     closedir(d);
-    qsort(ctx->files, ctx->file_count, sizeof(FileEntry), cmp_files);
+    qsort(ctx->all_files, ctx->all_count, sizeof(FileEntry), cmp_files);
+    apply_filter(ctx);
 }
 
 /* Build output filename: <dir>/<base>_<suffix>.<ext> */
@@ -243,7 +290,11 @@ static void draw_browser(AppCtx *ctx) {
     }
     mvwhline(w, 1, 0, ACS_HLINE, wd);
 
-    int list_h = h - 2;   /* rows available for file list */
+    /* Reserve bottom row for filter bar when active */
+    int filter_row = h - 1;
+    int list_h = filter_row - 2;   /* rows available for file list */
+    if (list_h < 1) list_h = 1;
+
     /* Adjust scroll */
     if (ctx->browser_cursor < ctx->browser_scroll)
         ctx->browser_scroll = ctx->browser_cursor;
@@ -253,7 +304,7 @@ static void draw_browser(AppCtx *ctx) {
     for (int i = 0; i < list_h; i++) {
         int idx = ctx->browser_scroll + i;
         if (idx >= ctx->file_count) break;
-        FileEntry *fe = &ctx->files[idx];
+        FileEntry *fe = &BFILE(ctx, idx);
         int row = 2 + i;
         int selected = (idx == ctx->browser_cursor);
 
@@ -293,10 +344,25 @@ static void draw_browser(AppCtx *ctx) {
         if (selected) wattroff(w, COLOR_PAIR(CP_SELECTED) | A_BOLD);
     }
 
-    /* scroll indicator */
-    if (ctx->file_count > list_h) {
-        mvwprintw(w, h - 1, 1, "(%d/%d)", ctx->browser_cursor + 1, ctx->file_count);
+    /* filter bar (always occupies bottom row of the browser panel) */
+    wattron(w, COLOR_PAIR(ctx->filter_active ? CP_CUSTOM : CP_DIM) | A_BOLD);
+    mvwhline(w, filter_row, 0, ' ', wd);
+    if (ctx->filter_active) {
+        mvwprintw(w, filter_row, 1, " / %s_", ctx->filter_buf);
+    } else if (ctx->filter_len > 0) {
+        /* filter applied but bar is inactive — show result count */
+        mvwprintw(w, filter_row, 1, " /%s  (%d match%s)",
+                  ctx->filter_buf,
+                  ctx->file_count, ctx->file_count == 1 ? "" : "es");
+    } else {
+        /* no filter — show scroll position or '/' hint */
+        if (ctx->file_count > list_h)
+            mvwprintw(w, filter_row, 1, " (%d/%d)  [/] filter",
+                      ctx->browser_cursor + 1, ctx->file_count);
+        else
+            mvwprintw(w, filter_row, 1, " [/] filter");
     }
+    wattroff(w, COLOR_PAIR(ctx->filter_active ? CP_CUSTOM : CP_DIM) | A_BOLD);
 
     wrefresh(w);
 }
@@ -321,7 +387,7 @@ static void draw_info_panel(AppCtx *ctx) {
         return;
     }
 
-    FileEntry *fe = &ctx->files[ctx->browser_cursor];
+    FileEntry *fe = &BFILE(ctx, ctx->browser_cursor);
     int row = 2;
 
 #define ILABEL(lbl) do { \
@@ -1151,14 +1217,56 @@ static void draw_result_screen(AppCtx *ctx) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void handle_browser_input(AppCtx *ctx, int ch) {
-    int list_h;
-    {
-        int h, wd;
-        getmaxyx(ctx->win_browser, h, wd);
-        (void)wd;
-        list_h = h - 2;
+    int h, wd;
+    getmaxyx(ctx->win_browser, h, wd);
+    (void)wd;
+    int list_h = h - 3;   /* -2 title/divider, -1 filter bar */
+    if (list_h < 1) list_h = 1;
+
+    /* ── Filter mode intercepts most keys ─────────────────────────────── */
+    if (ctx->filter_active) {
+        /* ESC: close bar (filter text stays, files remain filtered) */
+        if (ch == 27) {
+            ctx->filter_active = 0;
+            return;
+        }
+        /* Backspace: delete last UTF-8 codepoint; empty → close bar */
+        if (ch == KEY_BACKSPACE || ch == 127 || ch == 8) {
+            if (ctx->filter_len == 0) {
+                ctx->filter_active = 0;
+            } else {
+                filter_backspace(ctx->filter_buf, &ctx->filter_len);
+                apply_filter(ctx);
+                ctx->browser_cursor = 0;
+                ctx->browser_scroll = 0;
+            }
+            return;
+        }
+        /* Arrow navigation and PgUp/PgDn pass through to the switch below */
+        if (ch == KEY_UP || ch == KEY_DOWN ||
+            ch == KEY_PPAGE || ch == KEY_NPAGE ||
+            ch == KEY_HOME  || ch == KEY_END) {
+            /* fall through */
+        }
+        /* Enter: close bar, then open selected item (fall through) */
+        else if (ch == '\n' || ch == KEY_ENTER) {
+            ctx->filter_active = 0;
+            /* fall through */
+        }
+        /* Any printable byte (ASCII or UTF-8 byte sequence) → add to filter */
+        else if (ch > 0 && ch < KEY_MIN && ch != 127) {
+            if (ctx->filter_len < (int)sizeof(ctx->filter_buf) - 2) {
+                ctx->filter_buf[ctx->filter_len++] = (char)(unsigned char)ch;
+                ctx->filter_buf[ctx->filter_len]   = '\0';
+            }
+            apply_filter(ctx);
+            ctx->browser_cursor = 0;
+            ctx->browser_scroll = 0;
+            return;
+        }
     }
 
+    /* ── Normal browser keys ──────────────────────────────────────────── */
     switch (ch) {
     case KEY_UP:   case 'k':
         if (ctx->browser_cursor > 0) {
@@ -1187,9 +1295,8 @@ static void handle_browser_input(AppCtx *ctx, int ch) {
 
     case '\n': case KEY_ENTER: {
         if (ctx->file_count == 0) break;
-        FileEntry *fe = &ctx->files[ctx->browser_cursor];
+        FileEntry *fe = &BFILE(ctx, ctx->browser_cursor);
         if (fe->is_dir) {
-            /* navigate into directory */
             if (strcmp(fe->name, "..") == 0) {
                 char *sl = strrchr(ctx->current_path, '/');
                 if (sl && sl != ctx->current_path) *sl = '\0';
@@ -1211,8 +1318,9 @@ static void handle_browser_input(AppCtx *ctx, int ch) {
         break;
     }
 
+    /* Backspace / Left arrow: go up a directory (only when filter bar is closed) */
     case KEY_BACKSPACE: case 127: case 8: case KEY_LEFT: {
-        /* go up one directory */
+        if (ctx->filter_active) break; /* already handled above */
         char *sl = strrchr(ctx->current_path, '/');
         if (sl && sl != ctx->current_path) *sl = '\0';
         else if (sl == ctx->current_path && ctx->current_path[1] != '\0')
@@ -1221,6 +1329,21 @@ static void handle_browser_input(AppCtx *ctx, int ch) {
         ctx->probe_loaded = 0;
         break;
     }
+
+    case '/':
+        /* open filter bar */
+        ctx->filter_active = 1;
+        break;
+
+    case 27: /* ESC when bar not active: clear filter entirely */
+        if (!ctx->filter_active && ctx->filter_len > 0) {
+            ctx->filter_buf[0] = '\0';
+            ctx->filter_len    = 0;
+            apply_filter(ctx);
+            ctx->browser_cursor = 0;
+            ctx->browser_scroll = 0;
+        }
+        break;
 
     case '.':
         ctx->show_hidden = !ctx->show_hidden;
@@ -1398,7 +1521,7 @@ int main(int argc, char *argv[]) {
         case STATE_BROWSER:
             /* Auto-probe selected file if not yet done */
             if (!ctx.probe_loaded && ctx.file_count > 0) {
-                FileEntry *fe = &ctx.files[ctx.browser_cursor];
+                FileEntry *fe = &BFILE(&ctx, ctx.browser_cursor);
                 if (!fe->is_dir && (fe->type == FILE_TYPE_VIDEO ||
                                     fe->type == FILE_TYPE_AUDIO ||
                                     fe->type == FILE_TYPE_IMAGE)) {
@@ -1466,7 +1589,7 @@ int main(int argc, char *argv[]) {
 cleanup:
     destroy_windows(&ctx);
     endwin();
-    free(ctx.files);
+    free(ctx.all_files);
     free_presets(ctx.presets);
     return 0;
 }
