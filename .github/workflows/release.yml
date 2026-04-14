@@ -1,0 +1,104 @@
+name: Build & Release
+
+# Triggered by pushing a version tag, e.g. git tag v1.0.1 && git push --tags
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  # ── Ubuntu: build binary + .deb ──────────────────────────────────────────
+  build-linux:
+    name: Ubuntu 24.04 — build .deb
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gcc make libncurses-dev
+
+      - name: Build binary
+        run: make
+
+      - name: Build .deb package
+        run: |
+          mkdir -p build
+          bash packaging/build_deb.sh
+
+      - name: List artefacts
+        run: ls -lh build/*.deb
+
+      - name: Upload .deb artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: build/*.deb
+
+  # ── macOS: build binary ───────────────────────────────────────────────────
+  build-macos:
+    name: macOS — build binary
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: brew install ncurses ffmpeg
+
+      - name: Build binary
+        run: make
+
+      - name: Rename binary
+        run: cp nfm nfm-macos-arm64
+
+      - name: Upload macOS binary artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-binary
+          path: nfm-macos-arm64
+
+  # ── Create GitHub Release and attach all artefacts ───────────────────────
+  release:
+    name: Create GitHub Release
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download .deb artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-package
+          path: dist/
+
+      - name: Download macOS binary artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-binary
+          path: dist/
+
+      # Extract the relevant section from CHANGELOG.md for the release body
+      - name: Extract release notes
+        id: notes
+        run: |
+          TAG="${GITHUB_REF_NAME}"           # e.g. v1.0.1
+          VER="${TAG#v}"                     # strip leading 'v'
+          # Grab lines from the matching ## [version] heading until the next ## heading
+          awk "/^## \[${VER}\]/{found=1; next} found && /^## /{exit} found{print}" \
+              CHANGELOG.md > release_notes.md
+          echo "notes_file=release_notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: List dist/
+        run: ls -lh dist/
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "nfm ${{ github.ref_name }}"
+          body_path: release_notes.md
+          files: |
+            dist/*.deb
+            dist/nfm-macos-arm64
