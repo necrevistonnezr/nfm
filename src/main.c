@@ -553,9 +553,16 @@ static void draw_file_menu(AppCtx *ctx) {
     wattron(w, A_DIM);
     mvwprintw(w, 1, 2, "File: ");
     wattroff(w, A_DIM);
-    char tmp[48];
+    char tmp[NAME_MAX + 1];
     snprintf(tmp, sizeof(tmp), "%s", fn);
-    if ((int)strlen(tmp) > pw - 10) { tmp[pw-13]='.'; tmp[pw-12]='.'; tmp[pw-11]='.'; tmp[pw-10]='\0'; }
+    int max_bytes = pw - 10;
+    if ((int)strlen(tmp) > max_bytes && max_bytes > 3) {
+        /* truncate UTF-8 safely: back up until we're at a character boundary */
+        int i = max_bytes - 3;
+        while (i > 0 && ((unsigned char)tmp[i] & 0xC0) == 0x80) i--;
+        tmp[i] = tmp[i+1] = tmp[i+2] = '.';
+        tmp[i+3] = '\0';
+    }
     wattron(w, A_BOLD); wprintw(w, "%s", tmp); wattroff(w, A_BOLD);
     mvwhline(w, 2, 1, ACS_HLINE, pw - 2);
 
@@ -1213,6 +1220,140 @@ static void draw_result_screen(AppCtx *ctx) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Inline rename
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void do_rename(AppCtx *ctx) {
+    if (ctx->file_count == 0) return;
+    FileEntry *fe = &BFILE(ctx, ctx->browser_cursor);
+    if (strcmp(fe->name, "..") == 0) return;   /* can't rename parent */
+
+    char buf[NAME_MAX + 1];
+    snprintf(buf, sizeof(buf), "%s", fe->name);
+    int len = (int)strlen(buf);
+    int cur = len;   /* byte cursor — starts at end */
+
+    int pw = 64, ph = 7;
+    WINDOW *w = popup_new(ctx, ph, pw);
+    curs_set(1);
+    wtimeout(w, -1);
+
+    for (;;) {
+        werase(w);
+        box(w, 0, 0);
+        popup_title(w, pw, " Rename ");
+
+        /* original name (dimmed) */
+        wattron(w, A_DIM);
+        char old_disp[NAME_MAX + 1];
+        snprintf(old_disp, (size_t)(pw - 10), "%s", fe->name);
+        mvwprintw(w, 2, 2, "Old: %s", old_disp);
+        wattroff(w, A_DIM);
+        mvwhline(w, 3, 1, ACS_HLINE, pw - 2);
+
+        /* editable input field — scroll so cursor is always visible */
+        wattron(w, COLOR_PAIR(CP_CUSTOM) | A_BOLD);
+        mvwhline(w, 4, 1, ' ', pw - 2);
+        int field_w = pw - 4;
+        int view_start = (cur >= field_w) ? cur - field_w + 1 : 0;
+        char disp[NAME_MAX + 1];
+        snprintf(disp, sizeof(disp), "%s", buf + view_start);
+        if ((int)strlen(disp) > field_w) disp[field_w] = '\0';
+        mvwprintw(w, 4, 2, "%-*s", field_w, disp);
+        wattroff(w, COLOR_PAIR(CP_CUSTOM) | A_BOLD);
+
+        popup_footer(w, ph, pw, "[Enter] Rename  [ESC] Cancel");
+        wmove(w, 4, 2 + (cur - view_start));
+        wrefresh(w);
+
+        int ch = wgetch(w);
+
+        if (ch == 27) break;   /* ESC → cancel */
+
+        if (ch == '\n' || ch == KEY_ENTER) {
+            if (len == 0) break;
+            if (strcmp(buf, fe->name) == 0) break;   /* no change */
+            /* reject names containing '/' */
+            if (strchr(buf, '/') != NULL) {
+                snprintf(ctx->status_msg, sizeof(ctx->status_msg),
+                         "Invalid name: '/' not allowed.");
+                ctx->status_is_error = 1;
+                break;
+            }
+            char newpath[PATH_MAX];
+            snprintf(newpath, sizeof(newpath), "%s/%s", ctx->current_path, buf);
+            if (rename(fe->fullpath, newpath) == 0) {
+                snprintf(ctx->status_msg, sizeof(ctx->status_msg),
+                         "Renamed to: %s", buf);
+                ctx->status_is_error = 0;
+                load_directory(ctx);
+                ctx->probe_loaded = 0;
+            } else {
+                snprintf(ctx->status_msg, sizeof(ctx->status_msg),
+                         "Rename failed: %s", strerror(errno));
+                ctx->status_is_error = 1;
+            }
+            break;
+        }
+
+        /* Backspace — UTF-8-aware delete before cursor */
+        if (ch == KEY_BACKSPACE || ch == 127 || ch == 8) {
+            if (cur > 0) {
+                int i = cur - 1;
+                while (i > 0 && ((unsigned char)buf[i] & 0xC0) == 0x80) i--;
+                memmove(buf + i, buf + cur, (size_t)(len - cur + 1));
+                len -= (cur - i);
+                cur  = i;
+            }
+            continue;
+        }
+
+        /* Delete — UTF-8-aware delete at cursor */
+        if (ch == KEY_DC) {
+            if (cur < len) {
+                int i = cur + 1;
+                while (i < len && ((unsigned char)buf[i] & 0xC0) == 0x80) i++;
+                memmove(buf + cur, buf + i, (size_t)(len - i + 1));
+                len -= (i - cur);
+            }
+            continue;
+        }
+
+        /* Cursor movement */
+        if (ch == KEY_LEFT) {
+            if (cur > 0) {
+                cur--;
+                while (cur > 0 && ((unsigned char)buf[cur] & 0xC0) == 0x80) cur--;
+            }
+            continue;
+        }
+        if (ch == KEY_RIGHT) {
+            if (cur < len) {
+                cur++;
+                while (cur < len && ((unsigned char)buf[cur] & 0xC0) == 0x80) cur++;
+            }
+            continue;
+        }
+        if (ch == KEY_HOME) { cur = 0;   continue; }
+        if (ch == KEY_END)  { cur = len; continue; }
+
+        /* Printable byte — insert at cursor */
+        if (ch > 0 && ch < KEY_MIN && ch != 127) {
+            if (len < NAME_MAX - 1) {
+                memmove(buf + cur + 1, buf + cur, (size_t)(len - cur + 1));
+                buf[cur] = (char)(unsigned char)ch;
+                cur++;
+                len++;
+            }
+            continue;
+        }
+    }
+
+    curs_set(0);
+    delwin(w);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * SCREEN: Browser input
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -1360,6 +1501,10 @@ static void handle_browser_input(AppCtx *ctx, int ch) {
         ctx->status_is_error = 0;
         break;
 
+    case KEY_F(2): case 'e': case 'E':
+        do_rename(ctx);
+        break;
+
     case 'r': case 'R':
         load_directory(ctx);
         ctx->probe_loaded = 0;
@@ -1373,21 +1518,23 @@ static void handle_browser_input(AppCtx *ctx, int ch) {
 
     case '?': {
         /* quick help popup */
-        int pw = 52, ph = 17;
+        int pw = 52, ph = 19;
         WINDOW *hw = popup_new(ctx, ph, pw);
         box(hw, 0, 0);
         popup_title(hw, pw, " Key Bindings ");
         int y = 1;
         mvwprintw(hw, y++, 2, "Up/Dn  k/j    Navigate files");
         mvwprintw(hw, y++, 2, "Left  Backsp  Go up one directory");
-        mvwprintw(hw, y++, 2, "Enter        Enter dir / open file");
-        mvwprintw(hw, y++, 2, "PgUp/PgDn    Scroll quickly");
-        mvwprintw(hw, y++, 2, "Home/End     First/last file");
-        mvwprintw(hw, y++, 2, ".            Toggle hidden files");
-        mvwprintw(hw, y++, 2, "m            Toggle media-only view");
-        mvwprintw(hw, y++, 2, "r            Refresh directory");
-        mvwprintw(hw, y++, 2, "q            Quit");
-        mvwprintw(hw, y++, 2, "?            This help");
+        mvwprintw(hw, y++, 2, "Enter         Enter dir / open file");
+        mvwprintw(hw, y++, 2, "PgUp/PgDn     Scroll quickly");
+        mvwprintw(hw, y++, 2, "Home/End      First/last file");
+        mvwprintw(hw, y++, 2, "/             Filter as you type");
+        mvwprintw(hw, y++, 2, "F2 / e        Rename file or folder");
+        mvwprintw(hw, y++, 2, ".             Toggle hidden files");
+        mvwprintw(hw, y++, 2, "m             Toggle media-only view");
+        mvwprintw(hw, y++, 2, "r             Refresh directory");
+        mvwprintw(hw, y++, 2, "q             Quit");
+        mvwprintw(hw, y++, 2, "?             This help");
         popup_footer(hw, ph, pw, "[any key] Close");
         wrefresh(hw); wtimeout(hw, -1); wgetch(hw); delwin(hw);
         break;

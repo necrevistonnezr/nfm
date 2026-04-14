@@ -3,7 +3,7 @@ Version: 1.0.2
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: libncurses6 (>= 6.0), ffmpeg (>= 4.0)
+Depends: libncursesw6 (>= 6.0), ffmpeg (>= 4.0)
 Maintainer: nfm contributors <nfm@example.com>
 Description: Flexible ncurses video converter for the terminal
  nfm is an interactive, menu-driven terminal frontend for ffmpeg,

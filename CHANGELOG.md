@@ -4,6 +4,23 @@ All notable changes to nfm are documented here.
 
 ---
 
+## [1.0.3] — 2026-04-14
+
+### Added
+- **Rename files and folders** — press `F2` or `e` on any entry to rename it
+  inline; full editing support: Left/Right cursor, Home/End, Delete, Backspace,
+  UTF-8-aware; `ESC` cancels, `Enter` confirms
+
+### Fixed
+- **Garbled Unicode / emoji in filenames on Linux** — the binary now links
+  against `libncursesw` (wide-character ncurses) instead of narrow `libncurses`;
+  emoji, umlauts and other multi-byte characters in filenames now render
+  correctly in the file menu and browser on all Linux distributions
+- **Filename truncation could split UTF-8 sequences** in the Actions popup;
+  now backs up to a safe character boundary before inserting `…`
+
+---
+
 ## [1.0.2] — 2026-04-14
 
 ### Added

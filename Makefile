@@ -9,7 +9,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 TARGET  := nfm
-VERSION := 1.0.0
+VERSION := 1.0.2
 PREFIX  ?= /usr/local
 
 SRCS := src/main.c src/detect.c src/probe.c src/presets.c src/progress.c
@@ -36,7 +36,8 @@ ifeq ($(UNAME), Darwin)
     endif
     LDLIBS += -lncurses
 else
-    LDLIBS += -lncurses
+    # Linux: ncursesw for proper UTF-8 / wide-character support
+    LDLIBS += -lncursesw
 endif
 
 # ── Build rules ───────────────────────────────────────────────────────────────

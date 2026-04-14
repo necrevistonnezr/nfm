@@ -21,7 +21,7 @@ if [ "$UNAME" = "Darwin" ]; then
 else
     echo "Installing dependencies via apt..."
     sudo apt-get update -qq
-    sudo apt-get install -y gcc make libncurses-dev ffmpeg
+    sudo apt-get install -y gcc make libncurses-dev libncursesw-dev ffmpeg
 fi
 
 echo ""

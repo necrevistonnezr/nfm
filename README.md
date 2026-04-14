@@ -4,7 +4,7 @@ A keyboard-driven terminal frontend for **ffmpeg**, built with ncurses.
 Inspired by [nano-ffmpeg](https://github.com/dgr8akki/nano-ffmpeg), rewritten in C.
 
 ```
-┌─ nfm 1.0.2 ─────────────────────────────── /home/user/Videos ─┐
+┌─ nfm 1.0.3 ─────────────────────────────── /home/user/Videos ─┐
 │ Files                   │ Info                                  │
 │──────────────────────── │ ──────────────────────────────────────│
 │ /  ..                   │ movie.mkv                             │
@@ -84,7 +84,7 @@ sudo make install
 
 ```bash
 make deb
-sudo dpkg -i build/nfm_1.0.2_amd64.deb
+sudo dpkg -i build/nfm_1.0.3_amd64.deb
 ```
 
 ## Usage
@@ -105,6 +105,7 @@ nfm /path/to/videos
 | `/` | Open filter bar — type to narrow listing in real time |
 | `ESC` (in filter) | Close bar, keep filter active |
 | `ESC` (filter inactive) | Clear filter entirely |
+| `F2` / `e` | Rename file or folder |
 | `.` | Toggle hidden files |
 | `m` | Toggle media-only view |
 | `r` | Refresh directory |
@@ -138,6 +139,15 @@ MIT
 ---
 
 ## Changelog
+
+### [1.0.3] — 2026-04-14
+
+#### Added
+- **Rename files and folders** — press `F2` or `e`; full editing with cursor movement, Backspace, Delete, Home/End; UTF-8-aware; ESC cancels
+
+#### Fixed
+- **Garbled Unicode / emoji in filenames on Linux** — now links against `libncursesw` for proper wide-character rendering
+- Filename truncation in Actions popup now UTF-8-safe (no more split byte sequences)
 
 ### [1.0.2] — 2026-04-14
 

@@ -8,7 +8,13 @@
 #define _POSIX_C_SOURCE 200809L
 #define _XOPEN_SOURCE   700
 
-#include <ncurses.h>
+/* Use ncursesw (wide-character) on Linux for proper UTF-8 rendering.
+ * On macOS, Homebrew ncurses already includes wide-char support. */
+#ifdef __linux__
+#  include <ncursesw/ncurses.h>
+#else
+#  include <ncurses.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
