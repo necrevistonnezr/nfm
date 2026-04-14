@@ -17,7 +17,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y gcc make libncurses-dev libncursesw-dev
+          sudo apt-get install -y gcc make libncurses-dev
 
       - name: Build binary
         run: make
