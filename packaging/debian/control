@@ -1,0 +1,16 @@
+Package: nfm
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Depends: libncurses6 (>= 6.0), ffmpeg (>= 4.0)
+Maintainer: nfm contributors <nfm@example.com>
+Description: Flexible ncurses video converter for the terminal
+ nfm is an interactive, menu-driven terminal frontend for ffmpeg,
+ inspired by nano-ffmpeg. It provides a file browser, built-in and
+ user-editable presets, hardware-capability detection, a real-time
+ progress display, and a custom-encoding form — all navigable with
+ keyboard shortcuts in a colour-coded ncurses interface.
+ .
+ Presets are stored as plain text files in ~/.config/nfm/presets/ so
+ they can be edited with any text editor.

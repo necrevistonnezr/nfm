@@ -1,0 +1,16 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# special.preset — Special / format-conversion presets
+# ─────────────────────────────────────────────────────────────────────────────
+
+[GIF to Video]
+type=special
+description=Convert animated GIF to MP4 (H.264, yuv420p)
+args=-movflags +faststart -pix_fmt yuv420p -vf scale=trunc(iw/2)*2:trunc(ih/2)*2 -c:v libx264 -preset fast -crf 20
+ext=mp4
+input_ext=gif
+
+[Video to GIF]
+type=special
+description=Convert video to animated GIF — 15 fps, 480 px wide, up to 30 s
+args=-vf fps=15,scale=480:-1:flags=lanczos -t 30
+ext=gif

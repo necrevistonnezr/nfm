@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# video.preset — Video conversion presets
+#
+# Format:
+#   [Preset Name]        section header — displayed in the menu
+#   type=video           preset category (video | audio | special)
+#   description=…        one-line description shown below the name
+#   args=…               ffmpeg arguments (inserted between -i input and output)
+#   ext=…                output file extension
+#   estimate_savings=1   (optional) show estimated file-size reduction first
+#
+# Lines starting with # are comments and are ignored.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[Plex Compatible 1080p]
+type=video
+description=Plex-compatible Full HD, H.264, fast-start for streaming
+args=-c:v libx264 -preset medium -crf 18 -vf scale=-2:1080 -c:a aac -b:a 192k -movflags +faststart
+ext=mp4
+
+[Plex Compatible 4K]
+type=video
+description=Plex-compatible 4K UHD, H.264, fast-start for streaming
+args=-c:v libx264 -preset medium -crf 18 -vf scale=-2:2160 -c:a aac -b:a 256k -movflags +faststart
+ext=mp4
+
+[720p x265 Medium Quality]
+type=video
+description=720p HEVC/H.265 — good quality-to-size ratio
+args=-c:v libx265 -preset medium -crf 23 -vf scale=-2:720 -c:a aac -b:a 128k
+ext=mkv
+
+[Shrink Video]
+type=video
+description=Keep resolution, switch to HEVC — shows estimated savings first
+args=-c:v libx265 -preset medium -crf 24 -c:a copy
+ext=mkv
+estimate_savings=1

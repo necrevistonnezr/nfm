@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(curl -s https://api.github.com/repos/dgr8akki/nano-ffmpeg/contents)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -s \"https://api.github.com/repos/dgr8akki/nano-ffmpeg/git/trees/main?recursive=1\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/screens/operations/operations.go\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/preset/preset.go\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/ffmpeg/detect.go\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/ffmpeg/capabilities.go\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/ffmpeg/probe.go\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/ffmpeg/progress.go\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/screens/filepicker/filepicker.go\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/screens/settings/settings.go\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/screens/progress/progress.go\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/app/config.go\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/ffmpeg/command.go\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/screens/home/home.go\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/ui/theme.go\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/dgr8akki/nano-ffmpeg/main/internal/app/app.go\")",
+      "Bash(gh auth:*)",
+      "Bash(git init:*)",
+      "Bash(gh repo:*)",
+      "Bash(make)",
+      "Bash(./nfm --help)",
+      "Bash(make clean:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

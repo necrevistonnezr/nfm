@@ -1,0 +1,6 @@
+src/*.o
+nfm
+build/
+*.deb
+*.swp
+.DS_Store

@@ -1,0 +1,21 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# audio.preset — Audio conversion presets
+# ─────────────────────────────────────────────────────────────────────────────
+
+[HQ AAC 256k]
+type=audio
+description=High-quality AAC audio, 256 kbps — good for music / archiving
+args=-vn -c:a aac -b:a 256k
+ext=m4a
+
+[HQ MP3 320k]
+type=audio
+description=High-quality MP3, 320 kbps CBR — maximum MP3 quality
+args=-vn -c:a libmp3lame -b:a 320k -q:a 0
+ext=mp3
+
+[Extract Audio (copy)]
+type=audio
+description=Extract audio stream without re-encoding (lossless, fastest)
+args=-vn -c:a copy
+ext=mka
