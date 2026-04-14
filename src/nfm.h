@@ -24,6 +24,7 @@
 #include <math.h>
 #include <signal.h>
 #include <strings.h>
+#include <locale.h>
 #include <sys/wait.h>
 #include <sys/select.h>
 #include <sys/time.h>
@@ -189,6 +190,7 @@ typedef struct {
     int        browser_cursor;
     int        browser_scroll;
     int        show_hidden;
+    int        show_media_only;  /* 1 = hide non-media files in browser */
 
     /* selected file */
     char      selected_file[PATH_MAX];

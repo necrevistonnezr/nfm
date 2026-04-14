@@ -72,6 +72,15 @@ static void load_directory(AppCtx *ctx) {
         const char *nm = ent->d_name;
         if (strcmp(nm, ".") == 0) continue;
         if (nm[0] == '.' && strcmp(nm, "..") != 0 && !ctx->show_hidden) continue;
+        /* media-only filter: skip regular files that are not video/audio/image */
+        if (ctx->show_media_only && strcmp(nm, "..") != 0) {
+            FileType t = ext_to_type(nm);
+            struct stat _st;
+            char _fp[PATH_MAX];
+            snprintf(_fp, sizeof(_fp), "%s/%s", ctx->current_path, nm);
+            if (stat(_fp, &_st) == 0 && !S_ISDIR(_st.st_mode)
+                && t == FILE_TYPE_OTHER) continue;
+        }
 
         FileEntry *fe = &ctx->files[ctx->file_count];
         memset(fe, 0, sizeof(*fe));
@@ -219,9 +228,19 @@ static void draw_browser(AppCtx *ctx) {
     /* title row */
     wattron(w, COLOR_PAIR(CP_TITLE) | A_BOLD);
     mvwprintw(w, 0, 1, "Files");
-    if (ctx->show_hidden)
-        mvwprintw(w, 0, 7, "[hidden]");
     wattroff(w, COLOR_PAIR(CP_TITLE) | A_BOLD);
+    int flag_col = 8;
+    if (ctx->show_hidden) {
+        wattron(w, COLOR_PAIR(CP_DIM) | A_DIM);
+        mvwprintw(w, 0, flag_col, "[hidden]");
+        wattroff(w, COLOR_PAIR(CP_DIM) | A_DIM);
+        flag_col += 9;
+    }
+    if (ctx->show_media_only) {
+        wattron(w, COLOR_PAIR(CP_VIDEO) | A_BOLD);
+        mvwprintw(w, 0, flag_col, "[media]");
+        wattroff(w, COLOR_PAIR(CP_VIDEO) | A_BOLD);
+    }
     mvwhline(w, 1, 0, ACS_HLINE, wd);
 
     int list_h = h - 2;   /* rows available for file list */
@@ -580,9 +599,9 @@ static void draw_preset_menu(AppCtx *ctx) {
     wattroff(w, COLOR_PAIR(CP_HEADER) | A_BOLD);
 
     /* legend */
-    wattron(w, COLOR_PAIR(CP_VIDEO)); mvwprintw(w, 1, 2, "■ Video"); wattroff(w, COLOR_PAIR(CP_VIDEO));
-    wattron(w, COLOR_PAIR(CP_AUDIO)); mvwprintw(w, 1, 12, "■ Audio"); wattroff(w, COLOR_PAIR(CP_AUDIO));
-    wattron(w, COLOR_PAIR(CP_SPECIAL)); mvwprintw(w, 1, 22, "■ Special"); wattroff(w, COLOR_PAIR(CP_SPECIAL));
+    wattron(w, COLOR_PAIR(CP_VIDEO)   | A_BOLD); mvwprintw(w, 1, 2,  "[V] Video");   wattroff(w, COLOR_PAIR(CP_VIDEO)   | A_BOLD);
+    wattron(w, COLOR_PAIR(CP_AUDIO)   | A_BOLD); mvwprintw(w, 1, 14, "[A] Audio");   wattroff(w, COLOR_PAIR(CP_AUDIO)   | A_BOLD);
+    wattron(w, COLOR_PAIR(CP_SPECIAL) | A_BOLD); mvwprintw(w, 1, 26, "[S] Special"); wattroff(w, COLOR_PAIR(CP_SPECIAL) | A_BOLD);
     mvwhline(w, 2, 0, ACS_HLINE, wd);
 
     int list_h = h - 4;
@@ -648,7 +667,7 @@ static void draw_preset_menu(AppCtx *ctx) {
     /* footer */
     wattron(w, COLOR_PAIR(CP_FOOTER));
     mvwhline(w, h - 1, 0, ' ', wd);
-    mvwprintw(w, h - 1, 1, " [Enter] Select  [q/ESC] Back  [↑↓] Navigate");
+    mvwprintw(w, h - 1, 1, " [Enter] Select  [q/ESC] Back  [k/j] Navigate");
     wattroff(w, COLOR_PAIR(CP_FOOTER));
 
     wrefresh(w);
@@ -958,7 +977,7 @@ static void draw_custom_settings(AppCtx *ctx) {
             /* brief hint */
             const char *hint = "";
             if (i == 1) hint = "  (0 = lossless, 23 = default, 51 = worst)";
-            if (i == 0) hint = "  [←/→] change";
+            if (i == 0) hint = "  [h/l or </> to change]";
             wattron(w, A_DIM); mvwprintw(w, y, 50, "%s", hint); wattroff(w, A_DIM);
         }
         y++;
@@ -986,7 +1005,7 @@ static void draw_custom_settings(AppCtx *ctx) {
 
     wattron(w, COLOR_PAIR(CP_FOOTER));
     mvwhline(w, h-1, 0, ' ', wd);
-    mvwprintw(w, h-1, 1, " [Enter] Start  [↑↓] Field  [←/→] Value  [q/ESC] Back");
+    mvwprintw(w, h-1, 1, " [Enter] Start  [k/j] Field  [h/l or </> ] Value  [q/ESC] Back");
     wattroff(w, COLOR_PAIR(CP_FOOTER));
 
     wrefresh(w);
@@ -1050,7 +1069,7 @@ static void draw_result_screen(AppCtx *ctx) {
 
     int y = 2;
     wattron(w, COLOR_PAIR(CP_SPECIAL) | A_BOLD);
-    mvwprintw(w, y++, 2, "✓ Encoding finished successfully.");
+    mvwprintw(w, y++, 2, "[OK] Encoding finished successfully.");
     wattroff(w, COLOR_PAIR(CP_SPECIAL) | A_BOLD);
     y++;
 
@@ -1209,6 +1228,15 @@ static void handle_browser_input(AppCtx *ctx, int ch) {
         ctx->probe_loaded = 0;
         break;
 
+    case 'm': case 'M':
+        ctx->show_media_only = !ctx->show_media_only;
+        load_directory(ctx);
+        ctx->probe_loaded = 0;
+        snprintf(ctx->status_msg, sizeof(ctx->status_msg),
+                 ctx->show_media_only ? "Showing media files only." : "Showing all files.");
+        ctx->status_is_error = 0;
+        break;
+
     case 'r': case 'R':
         load_directory(ctx);
         ctx->probe_loaded = 0;
@@ -1222,17 +1250,18 @@ static void handle_browser_input(AppCtx *ctx, int ch) {
 
     case '?': {
         /* quick help popup */
-        int pw = 52, ph = 16;
+        int pw = 52, ph = 17;
         WINDOW *hw = popup_new(ctx, ph, pw);
         box(hw, 0, 0);
         popup_title(hw, pw, " Key Bindings ");
         int y = 1;
-        mvwprintw(hw, y++, 2, "↑/↓  k/j     Navigate");
-        mvwprintw(hw, y++, 2, "←    Backsp  Go up one directory");
+        mvwprintw(hw, y++, 2, "Up/Dn  k/j    Navigate files");
+        mvwprintw(hw, y++, 2, "Left  Backsp  Go up one directory");
         mvwprintw(hw, y++, 2, "Enter        Enter dir / open file");
         mvwprintw(hw, y++, 2, "PgUp/PgDn    Scroll quickly");
         mvwprintw(hw, y++, 2, "Home/End     First/last file");
         mvwprintw(hw, y++, 2, ".            Toggle hidden files");
+        mvwprintw(hw, y++, 2, "m            Toggle media-only view");
         mvwprintw(hw, y++, 2, "r            Refresh directory");
         mvwprintw(hw, y++, 2, "q            Quit");
         mvwprintw(hw, y++, 2, "?            This help");
@@ -1297,6 +1326,10 @@ static int show_install_dialog(AppCtx *ctx) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 int main(int argc, char *argv[]) {
+    /* Must be called before initscr() so ncurses uses UTF-8 — fixes garbled
+     * multi-byte characters (■ ✓ ↑ ↓) and umlauts in filenames. */
+    setlocale(LC_ALL, "");
+
     AppCtx ctx;
     memset(&ctx, 0, sizeof(ctx));
 
@@ -1378,7 +1411,7 @@ int main(int argc, char *argv[]) {
             draw_header(&ctx);
             draw_browser(&ctx);
             draw_info_panel(&ctx);
-            draw_footer(&ctx, "[↑↓] Navigate  [Enter] Open  [←/Back] Up  [.] Hidden  [?] Help  [q] Quit");
+            draw_footer(&ctx, "[k/j] Navigate  [Enter] Open  [Back] Up  [.] Hidden  [m] Media only  [?] Help  [q] Quit");
             {
                 int ch = wgetch(ctx.win_browser);
                 if (ch != ERR) handle_browser_input(&ctx, ch);
@@ -1389,7 +1422,7 @@ int main(int argc, char *argv[]) {
             draw_header(&ctx);
             draw_browser(&ctx);
             draw_info_panel(&ctx);
-            draw_footer(&ctx, "[↑↓] Navigate  [Enter] Select  [q/ESC] Back");
+            draw_footer(&ctx, "[k/j] Navigate  [Enter] Select  [q/ESC] Back");
             draw_file_menu(&ctx);
             {
                 int ch = wgetch(ctx.win_browser);
